@@ -1,3 +1,4 @@
 mutagen>=1.48.1
 syncedlyrics>=1.0.1
 yt-dlp>=2026.10.21
+ytmusicapi>=1.12.3
