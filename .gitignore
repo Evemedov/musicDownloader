@@ -1,3 +1,4 @@
 .python-version
 .venv/
 cookies.txt
+*.opus

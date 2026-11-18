@@ -28,12 +28,14 @@ CLEANUP_PATTERNS = [
     r'[-_]+',
 ]
 
+PROVIDERS = ["NetEase", "Musixmatch", "LrcLib", "QQMusic", "Megalobiz"]
+
 logger = logging.getLogger(__name__)
 
 ytmusic = YTMusic()
 
 
-def get_lrc_ytmusic(musicId: str) -> tuple[str | None, bool]: # lyrics, if lyrics synced
+def get_lrc_ytmusic(musicId: str) -> tuple[str | None, bool]: # lyrics, is lyrics synced
     """Downloads synced lyrics with ytmusicapi"""
     try:
         browseId = ytmusic.get_watch_playlist(videoId=musicId)
@@ -61,17 +63,22 @@ def get_lrc_ytmusic(musicId: str) -> tuple[str | None, bool]: # lyrics, if lyric
         return None, False
 
 
-def get_lrc_another_source(track_name: str, artist_name: str) -> str | None:
+def get_lrc_another_source(track_name: str, artist_name: str) -> tuple[str | None, bool]: # lyrics, is lyrics synced
     """Downloads synced lyrics with syncedlyrics"""
     try:
-        lrc = syncedlyrics.search(f"{artist_name} {track_name}", providers=["NetEase", "Musixmatch", "LrcLib", "QQMusic", "Megalobiz"])
-        return lrc
+        lrc = syncedlyrics.search(f"{artist_name} {track_name}", synced_only=True, providers=PROVIDERS)
+        if lrc:
+            return lrc, True
+        lrc = syncedlyrics.search(f"{artist_name} {track_name}", plain_only=True, providers=PROVIDERS)
+        if lrc:
+            return lrc, False
+        return lrc, False
     except Exception as e:
         logging.error(f"Error while executing syncedlyrics: {e}")
-    return None
+    return None, False
 
 
-def download_yt_dlp(url: str, path: str) -> tuple[str, str, str]:
+def download_yt_dlp(url: str, path: str) -> tuple[str, str, str, str]:
     """Downloads .opus from Youtube Music with yt-dlp"""
     cmd = [*CMD, "-P", path, url]
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -94,7 +101,7 @@ def download_yt_dlp(url: str, path: str) -> tuple[str, str, str]:
 
 
 def clear_title(title: str) -> str:
-    """Clear junk from the song name (Official Video), (Lyrics), thx gemini"""
+    """Clear junk from the song name (Official Video), (Lyrics). thx gemini"""
     cleaned = title
     for pattern in CLEANUP_PATTERNS:
         cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
@@ -123,25 +130,24 @@ def main():
     logger.info(f"Searching for lrc via ytmusicapi: {musicId}")
     lyrics, isSynced = get_lrc_ytmusic(musicId)
     if not lyrics or not isSynced:
-        logging.warning(f"No synced lyrics in yt music, searching from another source")
+        logging.warning("No synced lyrics in yt music, searching from another source")
         clean_title = clear_title(title)
-        logging.info(f"Searching for lrc for: '{clean_title}'...")
-        lyrics_syncedlyrics = get_lrc_another_source(clean_title, uploader)
-        if lyrics_syncedlyrics:
+        logging.info(f"Searching for lrc for: '{uploader} {clean_title}'...")
+        lyrics_syncedlyrics, isSynced = get_lrc_another_source(clean_title, uploader)
+        if lyrics_syncedlyrics and isSynced:
             lyrics = lyrics_syncedlyrics
-            isSynced = True
 
     if lyrics:
-        # logging.info("Horaaay! Lyrics was found")
         audio = OggOpus(filepath)
-        if isSynced:
-            audio["lyrics"] = lyrics
-        else:
-            audio["unsyncedlyrics"] = lyrics
+        # audio["lyrics" if isSynced else "unsyncedlyrics"] = lyrics
+        audio["lyrics"] = lyrics
         audio.save()
-        logging.info("Success, go check for a new file with lyrics.")
+        if isSynced:
+            logging.info("Success, go check for a new file with lyrics.")
+        else:
+            logging.info("The unsynced lyrics was written to the file.")
     else:
-        logging.warning(f"Cant find the lyrics for {uploader} {clean_title}")
+        logging.warning(f"Cant find the lyrics for \"{uploader} {clean_title}\" :(")
 
 
 if __name__ == "__main__":
